@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, addDoc, query, where, deleteDoc, doc, setDoc, getDoc, orderBy } from "firebase/firestore";
+import { getFirestore, collection, getDocs, addDoc, query, where, deleteDoc, doc, setDoc, getDoc, orderBy, updateDoc } from "firebase/firestore";
 import passport from "passport";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import session from "express-session";
@@ -151,6 +151,9 @@ app.post("/api/auth/login", async (req, res) => {
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) {
       const userData = userSnap.data();
+      if (userData.banned) {
+        return res.status(403).json({ success: false, message: "This account has been banned." });
+      }
       const match = await bcrypt.compare(password, userData.password);
       if (match) {
         const loggedInUser = { username: userData.username, role: userData.role || "user" };
@@ -181,10 +184,24 @@ app.get("/auth/github/callback", passport.authenticate("github", { failureRedire
   `);
 });
 
-app.get("/api/user", (req, res) => {
+app.get("/api/user", async (req, res) => {
   if (req.isAuthenticated()) {
     const user = req.user as any;
-    res.json({ success: true, user: { username: user.username, role: user.role || "user" } });
+    let role = user.role || "user";
+    if (user.username === "k1ros") {
+      role = "admin";
+    } else {
+      try {
+        const userRef = doc(db, "users", user.username);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          role = userSnap.data().role || "user";
+        }
+      } catch (e) {
+        console.error("Error fetching user role", e);
+      }
+    }
+    res.json({ success: true, user: { username: user.username, role } });
   } else {
     res.status(401).json({ success: false, message: "Not authenticated" });
   }
@@ -200,7 +217,7 @@ app.post("/api/auth/logout", (req, res) => {
 app.get("/api/users", async (req, res) => {
   try {
     const snap = await getDocs(collection(db, "users"));
-    const users = snap.docs.map(d => ({ username: d.id }));
+    const users = snap.docs.map(d => ({ username: d.id, ...d.data() }));
     // Add admin if not in DB
     if (!users.find(u => u.username === "k1ros")) {
       users.push({ username: "k1ros" });
@@ -247,7 +264,14 @@ app.post("/api/chat/messages", async (req, res) => {
 
 app.delete("/api/chat/messages/:id", async (req, res) => {
   try {
-    if (req.body.username !== "k1ros") return res.status(403).json({ success: false });
+    const { username } = req.body;
+    const adminRef = doc(db, "users", username as string);
+    const adminSnap = await getDoc(adminRef);
+    const role = (username === "k1ros") ? "admin" : (adminSnap.exists() ? adminSnap.data().role : "user");
+    const isModOrAdmin = role === "admin" || role === "moderator";
+    
+    if (!isModOrAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
+    
     await deleteDoc(doc(db, "messages", req.params.id));
     res.json({ success: true });
   } catch (error: any) {
@@ -330,9 +354,10 @@ app.get("/api/admin/users", async (req, res) => {
     const { adminUsername } = req.query;
     const adminRef = doc(db, "users", adminUsername as string);
     const adminSnap = await getDoc(adminRef);
-    const isAdmin = (adminUsername === "k1ros") || (adminSnap.exists() && adminSnap.data().role === "admin");
+    const role = (adminUsername === "k1ros") ? "admin" : (adminSnap.exists() ? adminSnap.data().role : "user");
+    const isModOrAdmin = role === "admin" || role === "moderator";
     
-    if (!isAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
+    if (!isModOrAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
     
     const snap = await getDocs(collection(db, "users"));
     const users: any[] = snap.docs.map(d => ({ 
@@ -351,6 +376,52 @@ app.get("/api/admin/users", async (req, res) => {
   }
 });
 
+app.patch("/api/admin/users/:username/role", async (req, res) => {
+  try {
+    const { adminUsername, role } = req.body;
+    const { username } = req.params;
+
+    if (!adminUsername) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const adminQuery = query(collection(db, "users"), where("username", "==", adminUsername));
+    const adminSnapshot = await getDocs(adminQuery);
+    
+    if (adminSnapshot.empty) {
+      return res.status(401).json({ success: false, message: "Admin not found" });
+    }
+
+    const adminData = adminSnapshot.docs[0].data();
+    if (adminData.role !== "admin" && adminData.username !== "k1ros") {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
+    if (username === "k1ros") {
+      return res.status(403).json({ success: false, message: "Cannot change role of superadmin" });
+    }
+
+    const userQuery = query(collection(db, "users"), where("username", "==", username));
+    const userSnapshot = await getDocs(userQuery);
+
+    if (userSnapshot.empty) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const userDoc = userSnapshot.docs[0];
+    const targetRole = userDoc.data().role || "user";
+    if (adminUsername !== "k1ros" && targetRole === "admin") {
+      return res.status(403).json({ success: false, message: "Admins cannot change roles of other admins" });
+    }
+
+    await setDoc(doc(db, "users", userDoc.id), { role }, { merge: true });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 app.patch("/api/admin/users/:username/password", async (req, res) => {
   try {
     const { adminUsername, newPassword } = req.body;
@@ -362,9 +433,50 @@ app.patch("/api/admin/users/:username/password", async (req, res) => {
     
     if (!isAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
     
+    const targetUserRef = doc(db, "users", username);
+    const targetUserSnap = await getDoc(targetUserRef);
+    if (targetUserSnap.exists()) {
+      const targetRole = targetUserSnap.data().role || "user";
+      if (adminUsername !== "k1ros" && targetRole === "admin") {
+        return res.status(403).json({ success: false, message: "Admins cannot change passwords of other admins" });
+      }
+    }
+    
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     const userRef = doc(db, "users", username);
     await setDoc(userRef, { password: hashedPassword }, { merge: true });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get("/api/settings", async (req, res) => {
+  try {
+    const settingsRef = doc(db, "system", "settings");
+    const settingsSnap = await getDoc(settingsRef);
+    if (!settingsSnap.exists()) {
+      return res.json({ welcomeMessage: "Welcome to the chat!", maintenanceMode: false, chatEnabled: true });
+    }
+    res.json(settingsSnap.data());
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.patch("/api/admin/settings", async (req, res) => {
+  try {
+    const { adminUsername, settings } = req.body;
+    
+    const adminRef = doc(db, "users", adminUsername as string);
+    const adminSnap = await getDoc(adminRef);
+    const isAdmin = (adminUsername === "k1ros") || (adminSnap.exists() && adminSnap.data().role === "admin");
+    
+    if (!isAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
+    
+    const settingsRef = doc(db, "system", "settings");
+    await setDoc(settingsRef, settings, { merge: true });
+    
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -380,9 +492,95 @@ app.delete("/api/admin/users/:username", async (req, res) => {
     
     if (!isAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
     const { username } = req.params;
-    if (username === "k1ros") return res.status(400).json({ success: false, message: "Cannot delete admin" });
+    if (username === "k1ros") return res.status(400).json({ success: false, message: "Cannot delete superadmin" });
+    
+    const targetUserRef = doc(db, "users", username);
+    const targetUserSnap = await getDoc(targetUserRef);
+    if (targetUserSnap.exists()) {
+      const targetRole = targetUserSnap.data().role || "user";
+      if (adminUsername !== "k1ros" && targetRole === "admin") {
+        return res.status(403).json({ success: false, message: "Admins cannot delete other admins" });
+      }
+    }
     
     await deleteDoc(doc(db, "users", username));
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.patch("/api/admin/users/:username/ban", async (req, res) => {
+  try {
+    const { adminUsername, banned } = req.body;
+    const { username } = req.params;
+    
+    const adminRef = doc(db, "users", adminUsername as string);
+    const adminSnap = await getDoc(adminRef);
+    const role = (adminUsername === "k1ros") ? "admin" : (adminSnap.exists() ? adminSnap.data().role : "user");
+    const isModOrAdmin = role === "admin" || role === "moderator";
+    
+    if (!isModOrAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
+    if (username === "k1ros") return res.status(400).json({ success: false, message: "Cannot ban superadmin" });
+    
+    const targetUserRef = doc(db, "users", username);
+    const targetUserSnap = await getDoc(targetUserRef);
+    if (targetUserSnap.exists()) {
+      const targetRole = targetUserSnap.data().role || "user";
+      if (role === "moderator" && (targetRole === "admin" || targetRole === "moderator")) {
+        return res.status(403).json({ success: false, message: "Moderators cannot ban admins or other moderators" });
+      }
+      if (role === "admin" && targetRole === "admin" && adminUsername !== "k1ros") {
+        return res.status(403).json({ success: false, message: "Admins cannot ban other admins" });
+      }
+    }
+    
+    const userRef = doc(db, "users", username);
+    await setDoc(userRef, { banned }, { merge: true });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post("/api/admin/announce", async (req, res) => {
+  try {
+    const { adminUsername, text } = req.body;
+    const adminRef = doc(db, "users", adminUsername as string);
+    const adminSnap = await getDoc(adminRef);
+    const role = (adminUsername === "k1ros") ? "admin" : (adminSnap.exists() ? adminSnap.data().role : "user");
+    const isModOrAdmin = role === "admin" || role === "moderator";
+    
+    if (!isModOrAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
+    
+    const msg = { 
+      user: "SYSTEM", 
+      text, 
+      timestamp: Date.now(),
+      type: "text",
+      isSystem: true
+    };
+    const ref = await addDoc(collection(db, "messages"), msg);
+    res.json({ success: true, id: ref.id, ...msg });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete("/api/admin/messages", async (req, res) => {
+  try {
+    const { adminUsername } = req.body;
+    const adminRef = doc(db, "users", adminUsername as string);
+    const adminSnap = await getDoc(adminRef);
+    const role = (adminUsername === "k1ros") ? "admin" : (adminSnap.exists() ? adminSnap.data().role : "user");
+    const isModOrAdmin = role === "admin" || role === "moderator";
+    
+    if (!isModOrAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
+    
+    const snap = await getDocs(collection(db, "messages"));
+    const deletePromises = snap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(deletePromises);
+    
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -394,9 +592,10 @@ app.get("/api/admin/messages", async (req, res) => {
     const { adminUsername } = req.query;
     const adminRef = doc(db, "users", adminUsername as string);
     const adminSnap = await getDoc(adminRef);
-    const isAdmin = (adminUsername === "k1ros") || (adminSnap.exists() && adminSnap.data().role === "admin");
+    const role = (adminUsername === "k1ros") ? "admin" : (adminSnap.exists() ? adminSnap.data().role : "user");
+    const isModOrAdmin = role === "admin" || role === "moderator";
     
-    if (!isAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
+    if (!isModOrAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
     
     const snap = await getDocs(collection(db, "messages"));
     const messages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -415,16 +614,16 @@ app.get("/api/admin/messages", async (req, res) => {
 app.post("/api/admin/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (username === "k1ros" && password === "9876543210pol") return res.json({ success: true });
+    if (username === "k1ros" && password === "9876543210pol") return res.json({ success: true, role: "admin" });
     
     const userRef = doc(db, "users", username);
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) {
       const userData = userSnap.data();
       const match = await bcrypt.compare(password, userData.password);
-      if (match && userData.role === "admin") return res.json({ success: true });
+      if (match && (userData.role === "admin" || userData.role === "moderator")) return res.json({ success: true, role: userData.role });
     }
-    res.status(401).json({ success: false, message: "Invalid credentials or not an admin" });
+    res.status(401).json({ success: false, message: "Invalid credentials or not an admin/moderator" });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

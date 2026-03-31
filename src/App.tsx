@@ -5,7 +5,7 @@ import {
   MessageSquare, FileText, Lock, Home, Send, Trash2, Upload, LogOut, 
   ChevronRight, Download, UserPlus, LogIn, Paperclip, Mic, Video, 
   BarChart2, X, Play, Pause, Check, AlertCircle, Smile, Eye, File, 
-  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2, Github, Settings
+  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2, Github, Settings, ShieldAlert, LayoutDashboard
 } from "lucide-react";
 import { Toaster, toast } from 'sonner';
 import { 
@@ -23,6 +23,7 @@ import { cn } from "./lib/utils";
 // --- Types ---
 interface User {
   username: string;
+  role?: string;
 }
 
 interface FileItem {
@@ -298,7 +299,7 @@ const Navbar = () => {
     { path: "/", label: t.home || "Home", icon: Home },
     { path: "/chat", label: t.chat || "Chat", icon: MessageSquare },
     { path: "/files", label: t.files || "Files", icon: FileText },
-    ...(user?.role === "admin" || user?.username === "k1ros" ? [{ path: "/admin", label: t.admin || "Admin", icon: Lock }] : []),
+    ...(user?.role === "admin" || user?.role === "moderator" || user?.username === "k1ros" ? [{ path: "/admin", label: t.admin || "Admin", icon: Lock }] : []),
   ];
 
   return (
@@ -1092,11 +1093,11 @@ const ChatPage = () => {
                   )}
                 </div>
 
-                {user?.username === "k1ros" && (
+                {(user?.role === "admin" || user?.role === "moderator" || user?.username === "k1ros") && (
                   <button 
                     onClick={() => handleDeleteMessage(msg.id)}
                     className="text-white/20 hover:text-red-400 transition-colors"
-                    title="Delete Message (Admin Only)"
+                    title="Delete Message (Admin/Mod Only)"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -1360,7 +1361,7 @@ const ChatPage = () => {
                         </div>
                         <div className="text-left">
                           <p className="font-bold text-white">{u.username}</p>
-                          <p className="text-[10px] text-white/40 uppercase tracking-widest">Active User</p>
+                          <p className="text-[10px] text-white/40 uppercase tracking-widest">{u.role || 'User'}</p>
                         </div>
                       </div>
                       <ChevronRight size={16} className="text-white/20 group-hover:text-purple-400 transition-colors" />
@@ -1599,17 +1600,20 @@ const AdminPage = () => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [adminMessages, setAdminMessages] = useState<Message[]>([]);
-  const [activeTab, setActiveTab] = useState<'files' | 'users' | 'messages'>('files');
+  const [announcementText, setAnnouncementText] = useState('');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'files' | 'users' | 'messages' | 'settings'>('dashboard');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'user' | 'message', id: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'user' | 'message' | 'all_messages', id: string } | null>(null);
   const [passwordResetTarget, setPasswordResetTarget] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [settings, setSettings] = useState({ welcomeMessage: "Welcome to the chat!", maintenanceMode: false, chatEnabled: true });
   const { user: authUser } = useAuth();
+  const isSuperAdmin = authUser?.role === "admin" || authUser?.username === "k1ros";
 
   useEffect(() => {
-    if (authUser?.role === "admin" || authUser?.username === "k1ros") {
+    if (authUser?.role === "admin" || authUser?.role === "moderator" || authUser?.username === "k1ros") {
       setIsAdminLoggedIn(true);
       fetchAllData();
     }
@@ -1636,6 +1640,13 @@ const AdminPage = () => {
     fetchFiles();
     fetchUsers();
     fetchAdminMessages();
+    fetchSettings();
+  };
+
+  const fetchSettings = () => {
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then(setSettings);
   };
 
   const fetchFiles = () => {
@@ -1695,6 +1706,25 @@ const AdminPage = () => {
     xhr.send(formData);
   };
 
+  const handleRoleChange = async (targetUsername: string, newRole: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${targetUsername}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminUsername: authUser?.username || "k1ros", role: newRole }),
+      });
+      if (res.ok) {
+        fetchUsers();
+        toast.success(`Role updated to ${newRole} for ${targetUsername}`);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update role");
+      }
+    } catch (err) {
+      toast.error("Network error updating role");
+    }
+  };
+
   const confirmDelete = async () => {
     if (!deleteConfirm) return;
     
@@ -1713,6 +1743,13 @@ const AdminPage = () => {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: authUser?.username || "k1ros" })
+      });
+      fetchAdminMessages();
+    } else if (deleteConfirm.type === 'all_messages') {
+      await fetch(`/api/admin/messages`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminUsername: authUser?.username || "k1ros" }),
       });
       fetchAdminMessages();
     }
@@ -1735,15 +1772,77 @@ const AdminPage = () => {
         body: JSON.stringify({ adminUsername: authUser?.username || "k1ros", newPassword }),
       });
       if (res.ok) {
-        alert("Password reset successfully");
+        toast.success("Password reset successfully");
         setPasswordResetTarget(null);
         setNewPassword("");
       } else {
         const data = await res.json();
-        setError(data.message || "Failed to reset password");
+        toast.error(data.error || "Failed to reset password");
       }
     } catch (err) {
-      setError("Network error resetting password");
+      toast.error("Network error resetting password");
+    }
+  };
+
+  const handleBanUser = async (targetUsername: string, currentBanStatus: boolean) => {
+    try {
+      const res = await fetch(`/api/admin/users/${targetUsername}/ban`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminUsername: authUser?.username || "k1ros", banned: !currentBanStatus }),
+      });
+      if (res.ok) {
+        fetchUsers();
+        toast.success(`User ${!currentBanStatus ? 'banned' : 'unbanned'} successfully.`);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update ban status");
+      }
+    } catch (err) {
+      toast.error("Network error updating ban status");
+    }
+  };
+
+  const handleClearAllMessages = () => {
+    setDeleteConfirm({ type: 'all_messages', id: 'all' });
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      const res = await fetch(`/api/admin/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminUsername: authUser?.username || "k1ros", settings }),
+      });
+      if (res.ok) {
+        toast.success("Settings saved successfully.");
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to save settings");
+      }
+    } catch (err) {
+      toast.error("Network error saving settings");
+    }
+  };
+
+  const handleSendAnnouncement = async () => {
+    if (!announcementText.trim()) return;
+    try {
+      const res = await fetch(`/api/admin/announce`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminUsername: authUser?.username || "k1ros", text: announcementText }),
+      });
+      if (res.ok) {
+        setAnnouncementText('');
+        fetchAdminMessages();
+        toast.success("Announcement sent successfully.");
+      } else {
+        const data = await res.json();
+        alert(data.message || "Failed to send announcement");
+      }
+    } catch (err) {
+      alert("Network error sending announcement");
     }
   };
 
@@ -1814,20 +1913,31 @@ const AdminPage = () => {
           <Lock className="text-orange-400" /> Admin Panel
         </h2>
         
-        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 overflow-x-auto">
           <button 
-            onClick={() => setActiveTab('files')}
+            onClick={() => setActiveTab('dashboard')}
             className={cn(
-              "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-              activeTab === 'files' ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20" : "text-white/40 hover:text-white"
+              "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap",
+              activeTab === 'dashboard' ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20" : "text-white/40 hover:text-white"
             )}
           >
-            <FileText size={16} /> Files
+            <LayoutDashboard size={16} /> Dashboard
           </button>
+          {isSuperAdmin && (
+            <button 
+              onClick={() => setActiveTab('files')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap",
+                activeTab === 'files' ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20" : "text-white/40 hover:text-white"
+              )}
+            >
+              <FileText size={16} /> Files
+            </button>
+          )}
           <button 
             onClick={() => setActiveTab('users')}
             className={cn(
-              "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
+              "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap",
               activeTab === 'users' ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20" : "text-white/40 hover:text-white"
             )}
           >
@@ -1836,12 +1946,23 @@ const AdminPage = () => {
           <button 
             onClick={() => setActiveTab('messages')}
             className={cn(
-              "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
+              "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap",
               activeTab === 'messages' ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20" : "text-white/40 hover:text-white"
             )}
           >
             <MessageSquare size={16} /> Messages
           </button>
+          {isSuperAdmin && (
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap",
+                activeTab === 'settings' ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20" : "text-white/40 hover:text-white"
+              )}
+            >
+              <Settings size={16} /> Settings
+            </button>
+          )}
         </div>
 
         <button
@@ -1866,9 +1987,15 @@ const AdminPage = () => {
               </div>
               <h3 className="text-xl font-bold mb-2">Confirm Delete</h3>
               <p className="text-white/40 text-sm mb-8">
-                Are you sure you want to delete this {deleteConfirm.type}? 
-                <span className="block text-white font-medium mt-1">{deleteConfirm.id}</span>
-                This action cannot be undone.
+                {deleteConfirm.type === 'all_messages' ? (
+                  "Are you sure you want to delete ALL messages? This action cannot be undone."
+                ) : (
+                  <>
+                    Are you sure you want to delete this {deleteConfirm.type}? 
+                    <span className="block text-white font-medium mt-1">{deleteConfirm.id}</span>
+                    This action cannot be undone.
+                  </>
+                )}
               </p>
               <div className="flex gap-3">
                 <button 
@@ -1923,6 +2050,31 @@ const AdminPage = () => {
       </AnimatePresence>
 
       <div className="grid grid-cols-1 gap-8">
+        {activeTab === 'dashboard' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white/5 border border-white/10 p-6 rounded-3xl flex flex-col items-center justify-center text-center">
+              <Users size={32} className="text-blue-400 mb-4" />
+              <div className="text-4xl font-bold mb-1">{users.length}</div>
+              <div className="text-white/40 text-sm uppercase tracking-widest font-bold">Total Users</div>
+            </div>
+            <div className="bg-white/5 border border-white/10 p-6 rounded-3xl flex flex-col items-center justify-center text-center">
+              <MessageSquare size={32} className="text-green-400 mb-4" />
+              <div className="text-4xl font-bold mb-1">{adminMessages.length}</div>
+              <div className="text-white/40 text-sm uppercase tracking-widest font-bold">Total Messages</div>
+            </div>
+            <div className="bg-white/5 border border-white/10 p-6 rounded-3xl flex flex-col items-center justify-center text-center">
+              <FileText size={32} className="text-orange-400 mb-4" />
+              <div className="text-4xl font-bold mb-1">{files.length}</div>
+              <div className="text-white/40 text-sm uppercase tracking-widest font-bold">Total Files</div>
+            </div>
+            <div className="bg-white/5 border border-white/10 p-6 rounded-3xl flex flex-col items-center justify-center text-center">
+              <ShieldAlert size={32} className="text-red-400 mb-4" />
+              <div className="text-4xl font-bold mb-1">{users.filter(u => u.banned).length}</div>
+              <div className="text-white/40 text-sm uppercase tracking-widest font-bold">Banned Users</div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'files' && (
           <>
             <div className="bg-white/5 border border-white/10 p-8 rounded-3xl">
@@ -1988,6 +2140,7 @@ const AdminPage = () => {
                   <tr className="border-b border-white/10">
                     <th className="pb-4 font-bold text-xs uppercase tracking-widest text-white/40">Username</th>
                     <th className="pb-4 font-bold text-xs uppercase tracking-widest text-white/40">Role</th>
+                    <th className="pb-4 font-bold text-xs uppercase tracking-widest text-white/40">Status</th>
                     <th className="pb-4 font-bold text-xs uppercase tracking-widest text-white/40">Created At</th>
                     <th className="pb-4 font-bold text-xs uppercase tracking-widest text-white/40 text-right">Actions</th>
                   </tr>
@@ -2000,34 +2153,63 @@ const AdminPage = () => {
                         <select
                           value={u.role || 'user'}
                           onChange={(e) => handleRoleChange(u.username, e.target.value)}
-                          disabled={u.username === 'k1ros'}
+                          disabled={u.username === 'k1ros' || !isSuperAdmin}
                           className={cn(
-                            "px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border bg-transparent outline-none cursor-pointer transition-all",
-                            u.role === 'admin' ? "border-orange-500/30 text-orange-400 hover:bg-orange-500/10" : "border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                            "px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border bg-transparent outline-none transition-all",
+                            isSuperAdmin && u.username !== 'k1ros' ? "cursor-pointer" : "cursor-not-allowed opacity-70",
+                            u.role === 'admin' ? "border-orange-500/30 text-orange-400 hover:bg-orange-500/10" : 
+                            u.role === 'moderator' ? "border-purple-500/30 text-purple-400 hover:bg-purple-500/10" :
+                            "border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
                           )}
                         >
                           <option value="user" className="bg-[#111]">User</option>
+                          <option value="moderator" className="bg-[#111]">Moderator</option>
                           <option value="admin" className="bg-[#111]">Admin</option>
                         </select>
+                      </td>
+                      <td className="py-4">
+                        <span className={cn(
+                          "px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border",
+                          u.banned ? "border-red-500/30 text-red-400 bg-red-500/10" : "border-green-500/30 text-green-400 bg-green-500/10"
+                        )}>
+                          {u.banned ? 'Banned' : 'Active'}
+                        </span>
                       </td>
                       <td className="py-4 text-sm text-white/40 font-mono">
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
                       </td>
                       <td className="py-4 text-right flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handlePasswordReset(u.username)}
-                          className="p-2 text-white/20 hover:text-orange-400 transition-colors"
-                          title="Reset Password"
-                        >
-                          <Lock size={16} />
-                        </button>
-                        {u.username !== 'k1ros' && (
+                        {isSuperAdmin && (
                           <button
-                            onClick={() => setDeleteConfirm({ type: 'user', id: u.username })}
-                            className="p-2 text-white/20 hover:text-red-400 transition-colors"
+                            onClick={() => handlePasswordReset(u.username)}
+                            className="p-2 text-white/20 hover:text-orange-400 transition-colors"
+                            title="Reset Password"
                           >
-                            <Trash2 size={16} />
+                            <Lock size={16} />
                           </button>
+                        )}
+                        {u.username !== 'k1ros' && (
+                          <>
+                            <button
+                              onClick={() => handleBanUser(u.username, !!u.banned)}
+                              className={cn(
+                                "p-2 transition-colors",
+                                u.banned ? "text-green-400 hover:text-green-300" : "text-white/20 hover:text-red-400"
+                              )}
+                              title={u.banned ? "Unban User" : "Ban User"}
+                            >
+                              <ShieldAlert size={16} />
+                            </button>
+                            {isSuperAdmin && (
+                              <button
+                                onClick={() => setDeleteConfirm({ type: 'user', id: u.username })}
+                                className="p-2 text-white/20 hover:text-red-400 transition-colors"
+                                title="Delete User"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </>
                         )}
                       </td>
                     </tr>
@@ -2041,9 +2223,41 @@ const AdminPage = () => {
 
         {activeTab === 'messages' && (
           <div className="bg-white/5 border border-white/10 p-8 rounded-3xl">
-            <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-              <MessageSquare size={20} className="text-orange-400" /> All Messages
-            </h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <MessageSquare size={20} className="text-orange-400" /> All Messages
+              </h3>
+              <button
+                onClick={handleClearAllMessages}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl transition-colors text-sm font-bold uppercase tracking-widest"
+              >
+                <Trash2 size={16} /> Clear All
+              </button>
+            </div>
+
+            <div className="mb-8 bg-black/20 p-4 rounded-2xl border border-white/5">
+              <h4 className="text-sm font-bold text-white/60 mb-3 uppercase tracking-widest flex items-center gap-2">
+                <Bell size={16} className="text-blue-400" /> System Announcement
+              </h4>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={announcementText}
+                  onChange={(e) => setAnnouncementText(e.target.value)}
+                  placeholder="Type announcement here..."
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-blue-500/50 transition-colors"
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendAnnouncement()}
+                />
+                <button
+                  onClick={handleSendAnnouncement}
+                  disabled={!announcementText.trim()}
+                  className="px-6 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-bold uppercase tracking-widest text-sm flex items-center gap-2"
+                >
+                  <Send size={16} /> Send
+                </button>
+              </div>
+            </div>
+
             <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
               {adminMessages.map((msg) => (
                 <div key={`admin-msg-${msg.id}`} className="p-4 bg-white/5 rounded-2xl border border-white/10 group hover:border-white/20 transition-all">
@@ -2103,7 +2317,7 @@ const AppContent = () => {
             <Route path="/files" element={<ProtectedRoute><FilesPage /></ProtectedRoute>} />
             <Route path="/admin" element={
               <ProtectedRoute>
-                {user?.role === "admin" || user?.username === "k1ros" ? <AdminPage /> : <Navigate to="/" />}
+                {user?.role === "admin" || user?.role === "moderator" || user?.username === "k1ros" ? <AdminPage /> : <Navigate to="/" />}
               </ProtectedRoute>
             } />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
