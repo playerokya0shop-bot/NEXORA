@@ -102,14 +102,20 @@ const SettingsProvider = ({ children }: { children: React.ReactNode }) => {
 };
 
 const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem("user");
+    return saved ? JSON.parse(saved) : null;
+  });
   const [loading, setLoading] = useState(true);
 
   const fetchUser = async () => {
     try {
       const res = await fetch("/api/user");
       const data = await res.json();
-      if (data.success) setUser(data.user);
+      if (data.success) {
+        setUser(data.user);
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
     } catch (e) {
       console.error("Failed to fetch user", e);
     } finally {
@@ -131,15 +137,17 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const login = (userData: User) => {
     setUser(userData);
+    localStorage.setItem("user", JSON.stringify(userData));
   };
 
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
+    localStorage.removeItem("user");
     window.location.href = "/login";
   };
 
-  if (loading) return null;
+  if (loading && !user) return null;
 
   return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
 };
@@ -420,7 +428,8 @@ const RegisterPage = () => {
       }
       const data = await res.json();
       if (data.success) {
-        navigate("/login");
+        login(data.user);
+        navigate("/");
       } else {
         setError(data.message);
       }

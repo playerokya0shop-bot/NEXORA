@@ -114,7 +114,12 @@ app.post("/api/auth/register", async (req, res) => {
     if (userSnap.exists()) return res.status(400).json({ success: false, message: "Username exists" });
     const hashedPassword = await bcrypt.hash(password, 10);
     await setDoc(userRef, { username, password: hashedPassword, role: "user", createdAt: new Date().toISOString() });
-    res.json({ success: true });
+    
+    const newUser = { username, role: "user" };
+    req.login(newUser, (err) => {
+      if (err) return res.status(500).json({ success: false, message: "Login after register failed" });
+      res.json({ success: true, user: newUser });
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -123,13 +128,25 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (username === "k1ros" && password === "9876543210pol") return res.json({ success: true, user: { username: "k1ros", role: "admin" } });
+    if (username === "k1ros" && password === "9876543210pol") {
+      const adminUser = { username: "k1ros", role: "admin" };
+      return req.login(adminUser, (err) => {
+        if (err) return res.status(500).json({ success: false, message: "Login failed" });
+        res.json({ success: true, user: adminUser });
+      });
+    }
     const userRef = doc(db, "users", username);
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) {
       const userData = userSnap.data();
       const match = await bcrypt.compare(password, userData.password);
-      if (match) return res.json({ success: true, user: { username: userData.username, role: userData.role || "user" } });
+      if (match) {
+        const loggedInUser = { username: userData.username, role: userData.role || "user" };
+        return req.login(loggedInUser, (err) => {
+          if (err) return res.status(500).json({ success: false, message: "Login failed" });
+          res.json({ success: true, user: loggedInUser });
+        });
+      }
     }
     res.status(401).json({ success: false, message: "Invalid credentials" });
   } catch (error: any) {
@@ -154,7 +171,8 @@ app.get("/auth/github/callback", passport.authenticate("github", { failureRedire
 
 app.get("/api/user", (req, res) => {
   if (req.isAuthenticated()) {
-    res.json({ success: true, user: { username: (req.user as any).username, role: "user" } });
+    const user = req.user as any;
+    res.json({ success: true, user: { username: user.username, role: user.role || "user" } });
   } else {
     res.status(401).json({ success: false, message: "Not authenticated" });
   }
