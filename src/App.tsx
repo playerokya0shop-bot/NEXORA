@@ -5,7 +5,7 @@ import {
   MessageSquare, FileText, Lock, Home, Send, Trash2, Upload, LogOut, 
   ChevronRight, Download, UserPlus, LogIn, Paperclip, Mic, Video, 
   BarChart2, X, Play, Pause, Check, AlertCircle, Smile, Eye, File, 
-  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2, Chrome
+  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2
 } from "lucide-react";
 import { Toaster, toast } from 'sonner';
 import { 
@@ -17,8 +17,7 @@ import {
   limit, 
   Timestamp 
 } from 'firebase/firestore';
-import { signInWithPopup } from 'firebase/auth';
-import { db, auth, googleProvider } from './firebase';
+import { db } from './firebase';
 import { cn } from "./lib/utils";
 
 // --- Types ---
@@ -73,20 +72,44 @@ const useAuth = () => {
 };
 
 const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem("nexora_user");
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchUser = async () => {
+    try {
+      const res = await fetch("/api/user");
+      const data = await res.json();
+      if (data.success) setUser(data.user);
+    } catch (e) {
+      console.error("Failed to fetch user", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUser();
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        fetchUser();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const login = (userData: User) => {
     setUser(userData);
-    localStorage.setItem("nexora_user", JSON.stringify(userData));
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
-    localStorage.removeItem("nexora_user");
+    window.location.href = "/login";
   };
+
+  if (loading) return null;
 
   return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
 };
@@ -406,19 +429,16 @@ const RegisterPage = () => {
           </button>
           <button 
             type="button"
-            onClick={async () => {
-              try {
-                const result = await signInWithPopup(auth, googleProvider);
-                login({ username: result.user.displayName || result.user.email || 'User' });
-                navigate("/");
-              } catch (err: any) {
-                setError(err.message);
-              }
+            onClick={() => {
+              const width = 600;
+              const height = 700;
+              const left = window.screen.width / 2 - width / 2;
+              const top = window.screen.height / 2 - height / 2;
+              window.open("/auth/github", "GitHub Auth", `width=${width},height=${height},top=${top},left=${left}`);
             }}
             className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
           >
-            <Chrome size={20} />
-            Sign in with Google
+            Sign in with GitHub
           </button>
         </form>
         <p className="text-center mt-6 text-white/40 text-sm">
@@ -497,19 +517,16 @@ const LoginPage = () => {
           </button>
           <button 
             type="button"
-            onClick={async () => {
-              try {
-                const result = await signInWithPopup(auth, googleProvider);
-                login({ username: result.user.displayName || result.user.email || 'User' });
-                navigate("/");
-              } catch (err: any) {
-                setError(err.message);
-              }
+            onClick={() => {
+              const width = 600;
+              const height = 700;
+              const left = window.screen.width / 2 - width / 2;
+              const top = window.screen.height / 2 - height / 2;
+              window.open("/auth/github", "GitHub Auth", `width=${width},height=${height},top=${top},left=${left}`);
             }}
             className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
           >
-            <Chrome size={20} />
-            Sign in with Google
+            Sign in with GitHub
           </button>
         </form>
         <p className="text-center mt-6 text-white/40 text-sm">

@@ -8,6 +8,9 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, addDoc, query, where, deleteDoc, doc, setDoc, getDoc, orderBy } from "firebase/firestore";
+import passport from "passport";
+import { Strategy as GitHubStrategy } from "passport-github2";
+import session from "express-session";
 
 // INLINED CONFIG FOR VERCEL STABILITY
 const firebaseConfig = {
@@ -28,6 +31,23 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 // Middleware
+app.use(session({ secret: process.env.SESSION_SECRET || "secret", resave: false, saveUninitialized: false }));
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.use(new GitHubStrategy({
+    clientID: process.env.GITHUB_CLIENT_ID || "dummy",
+    clientSecret: process.env.GITHUB_CLIENT_SECRET || "dummy",
+    callbackURL: "/auth/github/callback"
+  },
+  (accessToken: string, refreshToken: string, profile: any, done: any) => {
+    return done(null, profile);
+  }
+));
+
+passport.serializeUser((user: any, done) => done(null, user));
+passport.deserializeUser((user: any, done) => done(null, user));
+
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
@@ -102,6 +122,36 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
+});
+
+app.get("/auth/github", passport.authenticate("github", { scope: ["user:email"] }));
+
+app.get("/auth/github/callback", passport.authenticate("github", { failureRedirect: "/login" }), (req, res) => {
+  res.send(`
+    <html>
+      <body>
+        <script>
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+          window.close();
+        </script>
+      </body>
+    </html>
+  `);
+});
+
+app.get("/api/user", (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({ success: true, user: { username: (req.user as any).username, role: "user" } });
+  } else {
+    res.status(401).json({ success: false, message: "Not authenticated" });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  req.logout((err) => {
+    if (err) return res.status(500).json({ success: false });
+    res.json({ success: true });
+  });
 });
 
 app.get("/api/users", async (req, res) => {
