@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "Unique username"
+        },
+        "password": {
+          "type": "string",
+          "description": "Hashed password"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "user"],
+          "description": "User role"
+        }
+      },
+      "required": ["username", "password"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique message ID"
+        },
+        "sender": {
+          "type": "string",
+          "description": "Username of the sender"
+        },
+        "text": {
+          "type": "string",
+          "description": "Message content"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the message was sent"
+        },
+        "file": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "url": { "type": "string" },
+            "type": { "type": "string" }
+          },
+          "description": "Optional attached file"
+        },
+        "reactions": {
+          "type": "object",
+          "description": "Emoji reactions to the message",
+          "properties": {
+            "emoji": { "type": "string" },
+            "users": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      },
+      "required": ["sender", "text", "timestamp"]
+    },
+    "AdminFile": {
+      "title": "AdminFile",
+      "description": "Metadata for files uploaded by admin",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string" },
+        "size": { "type": "number" },
+        "uploadedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "url", "uploadedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Global chat messages"
+    },
+    "/adminFiles/{fileId}": {
+      "schema": "AdminFile",
+      "description": "Files uploaded by admin"
+    }
+  }
+}

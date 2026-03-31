@@ -1,0 +1,8 @@
+{
+  "name": "Nexora1",
+  "description": "A stylish dark-themed platform with chat, file sharing, and admin controls.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
