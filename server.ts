@@ -1,3 +1,5 @@
+import http from "http";
+import { Server } from "socket.io";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -24,6 +26,17 @@ const firebaseConfig = {
 };
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+  socket.on("join-room", (roomId) => socket.join(roomId));
+  socket.on("call-user", (data) => socket.to(data.to).emit("call-made", { offer: data.offer, from: socket.id }));
+  socket.on("make-answer", (data) => socket.to(data.to).emit("answer-made", { answer: data.answer, from: socket.id }));
+  socket.on("add-ice-candidate", (data) => socket.to(data.to).emit("ice-candidate", { candidate: data.candidate, from: socket.id }));
+});
+
 app.set('trust proxy', 1);
 
 // Initialize Firebase
@@ -308,9 +321,9 @@ app.get("/api/admin/users", async (req, res) => {
   }
 });
 
-app.patch("/api/admin/users/:username/role", async (req, res) => {
+app.patch("/api/admin/users/:username/password", async (req, res) => {
   try {
-    const { adminUsername, role } = req.body;
+    const { adminUsername, newPassword } = req.body;
     const { username } = req.params;
     
     const adminRef = doc(db, "users", adminUsername as string);
@@ -318,10 +331,10 @@ app.patch("/api/admin/users/:username/role", async (req, res) => {
     const isAdmin = (adminUsername === "k1ros") || (adminSnap.exists() && adminSnap.data().role === "admin");
     
     if (!isAdmin) return res.status(403).json({ success: false, message: "Unauthorized" });
-    if (username === "k1ros") return res.status(400).json({ success: false, message: "Cannot change primary admin role" });
     
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
     const userRef = doc(db, "users", username);
-    await setDoc(userRef, { role }, { merge: true });
+    await setDoc(userRef, { password: hashedPassword }, { merge: true });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -411,7 +424,7 @@ async function startServer() {
   }
 
   if (!isVercel) {
-    app.listen(3000, "0.0.0.0", () => console.log("Server on 3000"));
+    server.listen(3000, "0.0.0.0", () => console.log("Server on 3000"));
   }
 }
 

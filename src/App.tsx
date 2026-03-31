@@ -5,7 +5,7 @@ import {
   MessageSquare, FileText, Lock, Home, Send, Trash2, Upload, LogOut, 
   ChevronRight, Download, UserPlus, LogIn, Paperclip, Mic, Video, 
   BarChart2, X, Play, Pause, Check, AlertCircle, Smile, Eye, File, 
-  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2
+  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2, Github, Settings
 } from "lucide-react";
 import { Toaster, toast } from 'sonner';
 import { 
@@ -69,6 +69,36 @@ const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
+};
+
+// --- Settings Context ---
+import { translations, Language } from "./translations";
+
+interface SettingsContextType {
+  language: Language;
+  setLanguage: (lang: Language) => void;
+}
+
+const SettingsContext = createContext<SettingsContextType | null>(null);
+
+const useSettings = () => {
+  const context = useContext(SettingsContext);
+  if (!context) throw new Error("useSettings must be used within SettingsProvider");
+  return context;
+};
+
+const SettingsProvider = ({ children }: { children: React.ReactNode }) => {
+  const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'en');
+
+  useEffect(() => {
+    localStorage.setItem('language', language);
+  }, [language]);
+
+  return (
+    <SettingsContext.Provider value={{ language, setLanguage }}>
+      {children}
+    </SettingsContext.Provider>
+  );
 };
 
 const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -251,36 +281,42 @@ const Navbar = () => {
   const { user, logout } = useAuth();
   const { unreadCount, notifications, markAllAsRead, clearNotifications } = useNotifications();
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const { language } = useSettings();
+  const t = translations[language];
   
   if (!user) return null;
 
   const links = [
-    { path: "/", label: "Home", icon: Home },
-    { path: "/chat", label: "Chat", icon: MessageSquare },
-    { path: "/files", label: "Files", icon: FileText },
-    ...(user?.role === "admin" || user?.username === "k1ros" ? [{ path: "/admin", label: "Admin", icon: Lock }] : []),
+    { path: "/", label: t.home || "Home", icon: Home },
+    { path: "/chat", label: t.chat || "Chat", icon: MessageSquare },
+    { path: "/files", label: t.files || "Files", icon: FileText },
+    ...(user?.role === "admin" || user?.username === "k1ros" ? [{ path: "/admin", label: t.admin || "Admin", icon: Lock }] : []),
   ];
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-black/50 backdrop-blur-md border-b border-white/10">
-      <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link to="/" className="text-2xl font-bold tracking-tighter text-white hover:opacity-80 transition-opacity">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/50 backdrop-blur-md border-b border-foreground/10">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <Link to="/" className="text-2xl font-bold tracking-tighter text-foreground hover:opacity-80 transition-opacity">
           NEXORA
         </Link>
-        <div className="flex gap-4 sm:gap-6 items-center">
+        <div className="flex gap-2 sm:gap-6 items-center">
           {links.map((link) => (
             <Link
               key={link.path}
               to={link.path}
               className={cn(
-                "flex items-center gap-2 text-sm font-medium transition-colors hover:text-white",
-                location.pathname === link.path ? "text-white" : "text-white/50"
+                "flex items-center gap-2 text-sm font-medium transition-colors hover:text-foreground",
+                location.pathname === link.path ? "text-foreground" : "text-foreground/50"
               )}
             >
               <link.icon size={16} />
               <span className="hidden sm:inline">{link.label}</span>
             </Link>
           ))}
+          
+          <Link to="/settings" className="p-2 text-foreground/40 hover:text-foreground transition-colors">
+            <Settings size={18} />
+          </Link>
           
           <div className="relative">
             <button 
@@ -290,12 +326,12 @@ const Navbar = () => {
               }}
               className={cn(
                 "p-2 rounded-xl transition-all relative",
-                isNotifOpen ? "bg-white/10 text-white" : "text-white/40 hover:text-white hover:bg-white/5"
+                isNotifOpen ? "bg-foreground/10 text-foreground" : "text-foreground/40 hover:text-foreground hover:bg-foreground/5"
               )}
             >
               <Bell size={18} />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-black" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-background" />
               )}
             </button>
 
@@ -427,6 +463,7 @@ const RegisterPage = () => {
           <button type="submit" className="w-full bg-blue-500 text-white py-3 rounded-xl font-bold hover:bg-blue-600 transition-colors">
             Register
           </button>
+          <div className="text-center text-white/40 text-sm py-1">or</div>
           <button 
             type="button"
             onClick={() => {
@@ -438,6 +475,7 @@ const RegisterPage = () => {
             }}
             className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
           >
+            <Github size={20} />
             Sign in with GitHub
           </button>
         </form>
@@ -515,6 +553,7 @@ const LoginPage = () => {
           <button type="submit" className="w-full bg-blue-500 text-white py-3 rounded-xl font-bold hover:bg-blue-600 transition-colors">
             Login
           </button>
+          <div className="text-center text-white/40 text-sm py-1">or</div>
           <button 
             type="button"
             onClick={() => {
@@ -526,6 +565,7 @@ const LoginPage = () => {
             }}
             className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
           >
+            <Github size={20} />
             Sign in with GitHub
           </button>
         </form>
@@ -664,8 +704,8 @@ const ChatPage = () => {
     // Message will be added to state via onSnapshot
   };
 
-  const handleSendText = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendText = (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     if (!input.trim()) return;
     sendMessage({ type: 'text', text: input.trim() });
     setInput("");
@@ -1323,12 +1363,11 @@ const ChatPage = () => {
             </motion.div>
           </div>
         )}
-        <div className="flex-1 relative">
+        <form onSubmit={handleSendText} className="flex-1 relative">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSendText(e)}
             placeholder="Type a message..."
             className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 pr-12 outline-none focus:border-blue-500/50 transition-colors text-white"
           />
@@ -1336,7 +1375,7 @@ const ChatPage = () => {
             <Paperclip size={20} />
             <input type="file" className="hidden" onChange={handleFileUpload} />
           </label>
-        </div>
+        </form>
         
         <div className="flex gap-2">
           <button 
@@ -1361,7 +1400,8 @@ const ChatPage = () => {
             <Mic size={20} />
           </button>
           <button
-            onClick={handleSendText}
+            type="submit"
+            onClick={() => handleSendText()}
             className="p-4 bg-blue-500 text-white rounded-2xl flex items-center justify-center hover:bg-blue-600 transition-colors active:scale-90"
           >
             <Send size={20} />
@@ -1489,6 +1529,46 @@ const FilesPage = () => {
   );
 };
 
+const SettingsPage = () => {
+  const { language, setLanguage } = useSettings();
+  const t = translations[language];
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }} 
+      animate={{ opacity: 1 }} 
+      exit={{ opacity: 0 }}
+      className="min-h-screen pt-20 sm:pt-24 pb-12 px-4 sm:px-6 max-w-2xl mx-auto"
+    >
+      <h2 className="text-3xl font-bold mb-8 flex items-center gap-3">
+        <Settings className="text-orange-400" /> {t.settings}
+      </h2>
+
+      <div className="space-y-8">
+        <div className="bg-white/5 border border-white/10 p-8 rounded-3xl">
+          <h3 className="text-xl font-bold mb-6">{t.language}</h3>
+          <div className="grid grid-cols-3 gap-4">
+            {(['en', 'ru', 'he'] as Language[]).map((lang) => (
+              <button
+                key={lang}
+                onClick={() => setLanguage(lang)}
+                className={cn(
+                  "py-3 rounded-xl font-bold uppercase transition-all",
+                  language === lang 
+                    ? "bg-orange-500 text-white" 
+                    : "bg-white/5 text-foreground/40 hover:bg-white/10"
+                )}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 const AdminPage = () => {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [username, setUsername] = useState("");
@@ -1501,6 +1581,8 @@ const AdminPage = () => {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'user' | 'message', id: string } | null>(null);
+  const [passwordResetTarget, setPasswordResetTarget] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
   const { user: authUser } = useAuth();
 
   useEffect(() => {
@@ -1615,21 +1697,30 @@ const AdminPage = () => {
     setDeleteConfirm(null);
   };
 
-  const handleRoleChange = async (targetUsername: string, newRole: string) => {
+  const handlePasswordReset = (targetUsername: string) => {
+    setPasswordResetTarget(targetUsername);
+    setNewPassword("");
+  };
+
+  const confirmPasswordReset = async () => {
+    if (!passwordResetTarget || !newPassword) return;
+
     try {
-      const res = await fetch(`/api/admin/users/${targetUsername}/role`, {
+      const res = await fetch(`/api/admin/users/${passwordResetTarget}/password`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminUsername: authUser?.username || "k1ros", role: newRole }),
+        body: JSON.stringify({ adminUsername: authUser?.username || "k1ros", newPassword }),
       });
       if (res.ok) {
-        fetchUsers();
+        alert("Password reset successfully");
+        setPasswordResetTarget(null);
+        setNewPassword("");
       } else {
         const data = await res.json();
-        setError(data.message || "Failed to update role");
+        setError(data.message || "Failed to reset password");
       }
     } catch (err) {
-      setError("Network error updating role");
+      setError("Network error resetting password");
     }
   };
 
@@ -1773,6 +1864,39 @@ const AdminPage = () => {
             </motion.div>
           </div>
         )}
+        {passwordResetTarget && (
+          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="w-full max-w-sm bg-[#111] border border-white/10 p-8 rounded-3xl"
+            >
+              <h3 className="text-xl font-bold mb-6">Reset Password for <span className="text-orange-400">{passwordResetTarget}</span></h3>
+              <input 
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New Password"
+                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-orange-500/50 transition-colors text-white mb-8"
+              />
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setPasswordResetTarget(null)}
+                  className="flex-1 bg-white/5 text-white py-3 rounded-xl font-bold hover:bg-white/10 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmPasswordReset}
+                  className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600 transition-colors"
+                >
+                  Reset
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
       <div className="grid grid-cols-1 gap-8">
@@ -1866,7 +1990,14 @@ const AdminPage = () => {
                       <td className="py-4 text-sm text-white/40 font-mono">
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
                       </td>
-                      <td className="py-4 text-right">
+                      <td className="py-4 text-right flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handlePasswordReset(u.username)}
+                          className="p-2 text-white/20 hover:text-orange-400 transition-colors"
+                          title="Reset Password"
+                        >
+                          <Lock size={16} />
+                        </button>
                         {u.username !== 'k1ros' && (
                           <button
                             onClick={() => setDeleteConfirm({ type: 'user', id: u.username })}
@@ -1952,6 +2083,7 @@ const AppContent = () => {
                 {user?.role === "admin" || user?.username === "k1ros" ? <AdminPage /> : <Navigate to="/" />}
               </ProtectedRoute>
             } />
+            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           </Routes>
         </motion.div>
       </AnimatePresence>
@@ -1967,15 +2099,17 @@ const AppContent = () => {
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-[#050505] text-white selection:bg-blue-500/30">
+    <div className="min-h-screen bg-background text-foreground selection:bg-blue-500/30">
       <Toaster position="top-right" theme="dark" richColors closeButton />
-      <AuthProvider>
-        <Router>
-          <NotificationProvider>
-            <AppContent />
-          </NotificationProvider>
-        </Router>
-      </AuthProvider>
+      <SettingsProvider>
+        <AuthProvider>
+          <Router>
+            <NotificationProvider>
+              <AppContent />
+            </NotificationProvider>
+          </Router>
+        </AuthProvider>
+      </SettingsProvider>
     </div>
   );
 }
