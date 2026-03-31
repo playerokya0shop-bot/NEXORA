@@ -5,7 +5,7 @@ import {
   MessageSquare, FileText, Lock, Home, Send, Trash2, Upload, LogOut, 
   ChevronRight, Download, UserPlus, LogIn, Paperclip, Mic, Video, 
   BarChart2, X, Play, Pause, Check, AlertCircle, Smile, Eye, File, 
-  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2
+  FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2, Chrome
 } from "lucide-react";
 import { Toaster, toast } from 'sonner';
 import { 
@@ -17,7 +17,8 @@ import {
   limit, 
   Timestamp 
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { signInWithPopup } from 'firebase/auth';
+import { db, auth, googleProvider } from './firebase';
 import { cn } from "./lib/utils";
 
 // --- Types ---
@@ -343,6 +344,7 @@ const RegisterPage = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -401,6 +403,22 @@ const RegisterPage = () => {
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
           <button type="submit" className="w-full bg-blue-500 text-white py-3 rounded-xl font-bold hover:bg-blue-600 transition-colors">
             Register
+          </button>
+          <button 
+            type="button"
+            onClick={async () => {
+              try {
+                const result = await signInWithPopup(auth, googleProvider);
+                login({ username: result.user.displayName || result.user.email || 'User' });
+                navigate("/");
+              } catch (err: any) {
+                setError(err.message);
+              }
+            }}
+            className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
+          >
+            <Chrome size={20} />
+            Sign in with Google
           </button>
         </form>
         <p className="text-center mt-6 text-white/40 text-sm">
@@ -476,6 +494,22 @@ const LoginPage = () => {
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
           <button type="submit" className="w-full bg-blue-500 text-white py-3 rounded-xl font-bold hover:bg-blue-600 transition-colors">
             Login
+          </button>
+          <button 
+            type="button"
+            onClick={async () => {
+              try {
+                const result = await signInWithPopup(auth, googleProvider);
+                login({ username: result.user.displayName || result.user.email || 'User' });
+                navigate("/");
+              } catch (err: any) {
+                setError(err.message);
+              }
+            }}
+            className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
+          >
+            <Chrome size={20} />
+            Sign in with Google
           </button>
         </form>
         <p className="text-center mt-6 text-white/40 text-sm">
