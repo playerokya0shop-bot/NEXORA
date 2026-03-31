@@ -109,6 +109,12 @@ app.post("/api/auth/register", async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ success: false, message: "Username and password required" });
+    
+    const englishRegex = /^[\x20-\x7E]+$/;
+    if (!englishRegex.test(username) || !englishRegex.test(password)) {
+      return res.status(400).json({ success: false, message: "Please use only English letters, numbers, and standard symbols." });
+    }
+
     const userRef = doc(db, "users", username);
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) return res.status(400).json({ success: false, message: "Username exists" });
@@ -128,6 +134,12 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body;
+    
+    const englishRegex = /^[\x20-\x7E]+$/;
+    if (!englishRegex.test(username) || !englishRegex.test(password)) {
+      return res.status(400).json({ success: false, message: "Please use only English letters, numbers, and standard symbols." });
+    }
+
     if (username === "k1ros" && password === "9876543210pol") {
       const adminUser = { username: "k1ros", role: "admin" };
       return req.login(adminUser, (err) => {

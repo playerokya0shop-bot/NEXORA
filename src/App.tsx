@@ -416,6 +416,13 @@ const RegisterPage = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    const englishRegex = /^[\x20-\x7E]+$/;
+    if (!englishRegex.test(username) || !englishRegex.test(password)) {
+      setError("Please use only English letters, numbers, and standard symbols.");
+      return;
+    }
+
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
@@ -506,6 +513,13 @@ const LoginPage = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    const englishRegex = /^[\x20-\x7E]+$/;
+    if (!englishRegex.test(username) || !englishRegex.test(password)) {
+      setError("Please use only English letters, numbers, and standard symbols.");
+      return;
+    }
+
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
