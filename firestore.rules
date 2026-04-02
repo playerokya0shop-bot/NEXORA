@@ -81,7 +81,7 @@ service firebase.storage {
     }
     match /admin_files/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == 'k1ros');
+      allow write: if request.auth != null && (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin' || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'moderator' || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.username == 'k1ros');
     }
   }
 }

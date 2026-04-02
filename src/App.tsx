@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef, createContext, useContext, useMemo 
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  MessageSquare, FileText, Lock, Home, Send, Trash2, Upload, LogOut, 
+  MessageSquare, FileText, Lock, Home, Send, ArrowUp, Trash2, Upload, LogOut, 
   ChevronRight, Download, UserPlus, LogIn, Paperclip, Mic, Video, Phone,
   BarChart2, X, Play, Pause, Check, AlertCircle, Smile, Eye, File, 
   FileAudio, FileVideo, Globe, Users, Bell, Info, CheckCircle2, Github, Settings, ShieldAlert, LayoutDashboard,
-  CheckCircle, XCircle, ClipboardList, Search, Plus, MoreVertical, CheckCheck, ArrowLeft, EyeOff, ExternalLink
+  CheckCircle, XCircle, ClipboardList, Search, Plus, MoreVertical, CheckCheck, ArrowLeft, EyeOff, ExternalLink, MicOff
 } from "lucide-react";
 import { Toaster, toast } from 'sonner';
 import { 
@@ -161,6 +161,13 @@ interface Message {
   };
   recipient?: string | null;
   timestamp: number;
+  isEdited?: boolean;
+  replyTo?: {
+    id: string;
+    user: string;
+    text: string;
+    type: string;
+  };
 }
 
 // --- Auth Context ---
@@ -268,7 +275,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0b141a]">
+    <div className="min-h-screen flex items-center justify-center bg-black">
       <motion.div 
         animate={{ rotate: 360 }}
         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -479,7 +486,7 @@ const Navbar = () => {
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute right-0 mt-2 w-80 bg-[#111] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50"
+                  className="absolute right-0 mt-2 w-80 bg-[#1C1C1E] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50"
                 >
                   <div className="p-4 border-b border-white/5 flex items-center justify-between">
                     <h3 className="font-bold text-sm">Notifications</h3>
@@ -547,8 +554,8 @@ const AuthErrorModal = ({ error, onClose }: { error: string, onClose: () => void
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-[#1a1a1a] border border-red-500/30 p-6 rounded-2xl max-w-md w-full shadow-2xl"
+        animate={{ opacity: 1, scale: 1 }}          transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        className="bg-[#1C1C1E] border border-red-500/30 p-6 rounded-2xl max-w-md w-full shadow-2xl"
       >
         <div className="flex items-center gap-3 text-red-400 mb-4">
           <AlertCircle size={28} />
@@ -955,6 +962,30 @@ const HomePage = () => {
 // --- Enhanced Chat Components ---
 
 const CallModal = ({ isOpen, onClose, callData }: { isOpen: boolean, onClose: () => void, callData: any }) => {
+  const [isSharing, setIsSharing] = useState(false);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      setScreenStream(stream);
+      setIsSharing(true);
+      // Here you would normally send the stream to the other participant
+      console.log("Screen sharing started");
+    } catch (err) {
+      console.error("Error starting screen share", err);
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach(track => track.stop());
+      setScreenStream(null);
+      setIsSharing(false);
+      console.log("Screen sharing stopped");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div className="bg-[#1f2c33] p-8 rounded-3xl w-96 text-center">
@@ -962,8 +993,28 @@ const CallModal = ({ isOpen, onClose, callData }: { isOpen: boolean, onClose: ()
         <div className="w-24 h-24 bg-white/10 rounded-full mx-auto mb-8 flex items-center justify-center">
           <Phone size={48} className="text-white" />
         </div>
+        <div className="flex gap-4 justify-center mb-4">
+          {!isSharing ? (
+            <button 
+              onClick={startScreenShare}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-full font-bold transition-all"
+            >
+              Share Screen
+            </button>
+          ) : (
+            <button 
+              onClick={stopScreenShare}
+              className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-full font-bold transition-all"
+            >
+              Stop Sharing
+            </button>
+          )}
+        </div>
         <button 
-          onClick={onClose}
+          onClick={() => {
+            stopScreenShare();
+            onClose();
+          }}
           className="bg-red-500 hover:bg-red-600 text-white px-8 py-3 rounded-full font-bold transition-all"
         >
           End Call
@@ -975,13 +1026,15 @@ const CallModal = ({ isOpen, onClose, callData }: { isOpen: boolean, onClose: ()
 
 const ChatPage = () => {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState<'audio' | 'video' | null>(null);
   const [isPollModalOpen, setIsPollModalOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [chatUploadProgress, setChatUploadProgress] = useState<number | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [openReactionPickerId, setOpenReactionPickerId] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activeChat, setActiveChat] = useState<string | 'global' | null>(null);
@@ -1000,6 +1053,8 @@ const ChatPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
   const [callData, setCallData] = useState<{ callerId: string, calleeId: string, type: 'audio' | 'video' } | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -1155,7 +1210,12 @@ const ChatPage = () => {
   const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
-    fetchUsers();
+    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+      const usersList = snapshot.docs.map(doc => doc.data() as User);
+      setUsers(usersList.filter((u: User) => u.username !== user?.username));
+    }, (error) => {
+      console.error("Failed to fetch users", error);
+    });
     
     const q = query(collection(db, "messages"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -1187,7 +1247,10 @@ const ChatPage = () => {
       handleFirestoreError(error, OperationType.GET, "messages");
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubUsers();
+      unsubscribe();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -1202,16 +1265,6 @@ const ChatPage = () => {
       setUnreadCounts(prev => ({ ...prev, [activeChat]: 0 }));
     }
   }, [messages, activeChat]);
-
-  const fetchUsers = async () => {
-    try {
-      const snapshot = await getDocs(collection(db, "users"));
-      const usersList = snapshot.docs.map(doc => doc.data() as User);
-      setUsers(usersList.filter((u: User) => u.username !== user?.username));
-    } catch (err) {
-      console.error("Failed to fetch users", err);
-    }
-  };
 
   const sendMessage = async (msgData: Partial<Message>) => {
     try {
@@ -1230,11 +1283,39 @@ const ChatPage = () => {
     }
   };
 
-  const handleSendText = (e?: React.FormEvent | React.MouseEvent) => {
+  const handleSendText = async (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault();
     if (!input.trim()) return;
-    sendMessage({ type: 'text', text: input.trim() });
+
+    if (editingMessageId) {
+      try {
+        const messageRef = doc(db, "messages", editingMessageId);
+        await updateDoc(messageRef, {
+          text: input.trim(),
+          isEdited: true
+        });
+        setEditingMessageId(null);
+        setInput("");
+      } catch (err) {
+        console.error("Failed to edit message", err);
+        toast.error("Failed to edit message");
+      }
+      return;
+    }
+
+    const msgData: Partial<Message> = { type: 'text', text: input.trim() };
+    if (replyingToMessage) {
+      msgData.replyTo = {
+        id: replyingToMessage.id,
+        user: replyingToMessage.user,
+        text: replyingToMessage.type === 'text' ? replyingToMessage.text! : `[${replyingToMessage.type}]`,
+        type: replyingToMessage.type
+      };
+    }
+
+    sendMessage(msgData);
     setInput("");
+    setReplyingToMessage(null);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1247,13 +1328,12 @@ const ChatPage = () => {
     uploadTask.on('state_changed', 
       (snapshot) => {
         const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-        setUploadProgress(progress);
+        setChatUploadProgress(progress);
       }, 
       (error) => {
         console.error("Upload failed", error);
-        setError("Upload failed: " + error.message);
-        setTimeout(() => setError(null), 5000);
-        setUploadProgress(null);
+        toast.error("Upload failed: " + error.message);
+        setChatUploadProgress(null);
       }, 
       async () => {
         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
@@ -1263,7 +1343,7 @@ const ChatPage = () => {
           fileName: file.name, 
           fileType: file.type 
         });
-        setUploadProgress(null);
+        setChatUploadProgress(null);
       }
     );
   };
@@ -1372,6 +1452,10 @@ const ChatPage = () => {
   };
 
   const handleDeleteMessage = async (id: string) => {
+    if (user?.role !== 'admin' && user?.role !== 'moderator' && user?.username !== 'k1ros') {
+      toast.error("Only admins can delete messages");
+      return;
+    }
     try {
       await deleteDoc(doc(db, "messages", id));
       toast.success("Message deleted");
@@ -1477,14 +1561,14 @@ const ChatPage = () => {
   };
 
   return (
-    <div className="fixed inset-0 md:pt-16 flex bg-[#111b21] text-[#e9edef] overflow-hidden">
-      {/* Sidebar */}
+    <div className="flex h-screen w-full bg-black text-white overflow-hidden pt-0 md:pt-16">
+      {/* Sidebar - Chat List */}
       <div className={cn(
-        "w-full md:w-[30%] md:min-w-[300px] border-r border-white/10 flex flex-col bg-[#111b21] transition-all duration-300",
-        activeChat !== null ? "hidden md:flex" : "flex"
+        "w-full md:w-[350px] border-r border-white/10 flex flex-col bg-black transition-all duration-300",
+        activeChat ? "hidden md:flex" : "flex"
       )}>
         {/* Sidebar Header */}
-        <div className="h-16 bg-[#202c33] px-4 flex items-center justify-between">
+        <div className="h-16 bg-[#1C1C1E]/80 backdrop-blur-xl border-b border-white/5 px-4 flex items-center justify-between">
           <Link to="/settings" className="w-10 h-10 bg-purple-500/10 rounded-full overflow-hidden flex items-center justify-center text-purple-400 font-bold uppercase cursor-pointer hover:opacity-80 transition-opacity">
             {user?.profilePicUrl ? (
               <img src={user.profilePicUrl} alt="Profile" className="w-full h-full object-cover" />
@@ -1492,7 +1576,7 @@ const ChatPage = () => {
               user?.username[0]
             )}
           </Link>
-          <div className="flex items-center gap-4 text-[#aebac1]">
+          <div className="flex items-center gap-4 text-gray-400">
             <button onClick={() => setIsCreateGroupModalOpen(true)} className="p-2 hover:bg-white/5 rounded-full transition-colors" title="New Group">
               <Users size={24} />
             </button>
@@ -1507,14 +1591,14 @@ const ChatPage = () => {
 
         {/* Search */}
         <div className="p-2">
-          <div className="bg-[#202c33] rounded-lg flex items-center px-4 py-1.5 gap-4">
-            <Search size={18} className="text-[#8696a0]" />
+          <div className="bg-[#1C1C1E] rounded-lg flex items-center px-4 py-1.5 gap-4">
+            <Search size={18} className="text-gray-500" />
             <input 
               type="text" 
               placeholder="Search or start new chat" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-transparent border-none outline-none text-sm w-full placeholder:text-[#8696a0]"
+              className="bg-transparent border-none outline-none text-sm w-full placeholder:text-gray-500"
             />
           </div>
         </div>
@@ -1531,12 +1615,12 @@ const ChatPage = () => {
                 key={id}
                 onClick={() => setActiveChat(id === '__global__' ? 'global' : id)}
                 className={cn(
-                  "w-full flex items-center gap-3 p-3 hover:bg-[#2a3942] transition-colors border-b border-white/5",
-                  (id === '__global__' && activeChat === 'global') || (id === activeChat) ? "bg-[#2a3942]" : ""
+                  "w-full flex items-center gap-3 p-2 md:p-3 hover:bg-[#1C1C1E] transition-colors border-b border-white/5",
+                  (id === '__global__' && activeChat === 'global') || (id === activeChat) ? "bg-[#1C1C1E]" : ""
                 )}
               >
                 <div className={cn(
-                  "w-12 h-12 rounded-full overflow-hidden flex items-center justify-center font-bold uppercase flex-shrink-0",
+                  "w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden flex items-center justify-center font-bold uppercase flex-shrink-0",
                   id === '__global__' ? "bg-blue-500/20 text-blue-400" : "bg-purple-500/20 text-purple-400"
                 )}>
                   {id === '__global__' ? <Globe size={24} /> : (
@@ -1553,13 +1637,13 @@ const ChatPage = () => {
                         <Lock size={12} className="text-purple-400 flex-shrink-0" />
                       )}
                     </div>
-                    <span className="text-[10px] text-[#8696a0]">
+                    <span className="text-[10px] text-gray-500">
                       {new Date(lastMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-1">
-                    <div className="flex items-center gap-1 text-sm text-[#8696a0] truncate flex-1">
-                      {lastMsg.user === user?.username && <CheckCheck size={14} className="text-[#53bdeb]" />}
+                    <div className="flex items-center gap-1 text-sm text-gray-500 truncate flex-1">
+                      {lastMsg.user === user?.username && <CheckCheck size={14} className="text-white/80" />}
                       <span className={cn(
                         lockedChatIds.has(id === '__global__' ? 'global' : [user?.username, id].sort().join('_')) && 
                         !unlockedChats.has(id === '__global__' ? 'global' : [user?.username, id].sort().join('_')) 
@@ -1576,7 +1660,7 @@ const ChatPage = () => {
                       <motion.span 
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
-                        className="bg-[#00a884] text-[#111b21] text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full px-1"
+                        className="bg-[#0A84FF] text-[#111b21] text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full px-1"
                       >
                         {unreadCounts[id]}
                       </motion.span>
@@ -1590,7 +1674,7 @@ const ChatPage = () => {
       </div>
       {/* Main Chat Window */}
       <div className={cn(
-        "flex-1 flex flex-col bg-[#0b141a] relative transition-all duration-300",
+        "flex-1 flex flex-col bg-black relative transition-all duration-300",
         activeChat === null ? "hidden md:flex" : "flex"
       )}>
         {/* Background Overlay */}
@@ -1600,8 +1684,8 @@ const ChatPage = () => {
         {!activeChat && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="hidden md:flex flex-1 flex-col items-center justify-center text-center p-12 z-20 bg-[#222e35] border-l border-white/5"
+            animate={{ opacity: 1, scale: 1 }}          transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="hidden md:flex flex-1 flex-col items-center justify-center text-center p-12 z-20 bg-black border-l border-white/5"
           >
             <motion.div 
               initial={{ y: 20, opacity: 0 }}
@@ -1615,7 +1699,7 @@ const ChatPage = () => {
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.3 }}
-              className="text-3xl font-light text-[#e9edef] mb-4"
+              className="text-3xl font-light text-white mb-4"
             >
               Nexora Web
             </motion.h2>
@@ -1623,7 +1707,7 @@ const ChatPage = () => {
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className="text-sm text-[#8696a0] max-w-md leading-relaxed"
+              className="text-sm text-gray-500 max-w-md leading-relaxed"
             >
               Send and receive messages without keeping your phone online.<br/>
               Use Nexora on up to 4 linked devices and 1 phone at the same time.
@@ -1632,7 +1716,7 @@ const ChatPage = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.6 }}
-              className="mt-auto flex items-center gap-2 text-[#8696a0] text-xs"
+              className="mt-auto flex items-center gap-2 text-gray-500 text-xs"
             >
               <Lock size={12} /> End-to-end encrypted
             </motion.div>
@@ -1643,11 +1727,11 @@ const ChatPage = () => {
         {activeChat !== null && (
           <div className="flex-1 flex flex-col min-h-0">
             {isChatLocked && !unlockedChats.has(activeChat === 'global' ? 'global' : [user?.username, activeChat].sort().join('_')) ? (
-              <div className="flex-1 flex items-center justify-center z-30 bg-[#0b141a]">
+              <div className="flex-1 flex items-center justify-center z-30 bg-black">
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-[#202c33] p-10 rounded-3xl shadow-2xl border border-white/5 w-full max-w-lg mx-4 text-center"
+                  animate={{ opacity: 1, scale: 1 }}          transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  className="bg-[#1C1C1E] p-10 rounded-3xl shadow-2xl border border-white/5 w-full max-w-lg mx-4 text-center"
                 >
                   <div className="w-20 h-20 bg-purple-500/10 rounded-full flex items-center justify-center text-purple-400 mx-auto mb-8">
                     <Lock size={40} />
@@ -1655,7 +1739,7 @@ const ChatPage = () => {
                   <h3 className="text-2xl font-bold mb-3">
                     {isSettingPassword ? "Set Chat PIN" : "Chat Locked"}
                   </h3>
-                  <p className="text-[#8696a0] text-base mb-8">
+                  <p className="text-gray-500 text-base mb-8">
                     {isSettingPassword 
                       ? "This is your first time in this chat. Please set a 4-digit numeric PIN to keep it confidential." 
                       : "Enter the 4-digit PIN to access this conversation."}
@@ -1673,7 +1757,7 @@ const ChatPage = () => {
                           if (passwordError) setPasswordError("");
                         }}
                         onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
-                        className="w-full bg-[#2a3942] border-none outline-none rounded-xl px-4 py-4 text-2xl tracking-[0.5em] text-center placeholder:text-[#8696a0] placeholder:tracking-normal font-mono"
+                        className="w-full bg-[#1C1C1E] border-none outline-none rounded-xl px-4 py-4 text-2xl tracking-[0.5em] text-center placeholder:text-gray-500 placeholder:tracking-normal font-mono"
                         autoFocus
                         maxLength={4}
                         inputMode="numeric"
@@ -1681,7 +1765,7 @@ const ChatPage = () => {
                       <button 
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-[#8696a0] hover:text-white transition-colors p-2"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors p-2"
                       >
                         {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                       </button>
@@ -1697,13 +1781,13 @@ const ChatPage = () => {
                     )}
                     <button 
                       onClick={handleUnlock}
-                      className="w-full bg-[#00a884] hover:bg-[#008f6f] text-[#111b21] font-bold py-4 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 text-lg"
+                      className="w-full bg-[#0A84FF] hover:bg-[#008f6f] text-[#111b21] font-bold py-4 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 text-lg"
                     >
                       {isSettingPassword ? "Set PIN" : "Unlock Chat"}
                     </button>
                     <button 
                       onClick={() => setActiveChat(null)}
-                      className="w-full bg-transparent hover:bg-white/5 text-[#8696a0] py-3 rounded-xl transition-colors text-sm font-medium"
+                      className="w-full bg-transparent hover:bg-white/5 text-gray-500 py-3 rounded-xl transition-colors text-sm font-medium"
                     >
                       Go Back
                     </button>
@@ -1730,7 +1814,7 @@ const ChatPage = () => {
               </div>
             ) : (
               <>
-                <div className="h-16 bg-[#202c33] px-4 flex items-center justify-between z-10">
+                <div className="h-16 bg-[#1C1C1E]/60 backdrop-blur-2xl border-b border-white/10 px-4 flex items-center justify-between z-10 rounded-b-2xl shadow-lg">
                   <AnimatePresence mode="wait">
                     <motion.div 
                       key={activeChat}
@@ -1740,7 +1824,7 @@ const ChatPage = () => {
                       transition={{ duration: 0.2 }}
                       className="flex items-center gap-3"
                     >
-                      <button onClick={() => setActiveChat(null)} className="md:hidden p-2 -ml-2 text-[#aebac1] hover:bg-white/5 rounded-full">
+                      <button onClick={() => setActiveChat(null)} className="md:hidden p-2 -ml-2 text-gray-400 hover:bg-white/5 rounded-full">
                         <ArrowLeft size={20} />
                       </button>
                       <div className={cn(
@@ -1755,11 +1839,11 @@ const ChatPage = () => {
                       </div>
                       <div>
                         <p className="font-medium">{activeChat === 'global' ? "Global Chat" : activeChat}</p>
-                        <p className="text-[10px] text-[#8696a0] uppercase tracking-widest">{activeChat === 'global' ? "Community" : "Private Message"}</p>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-widest">{activeChat === 'global' ? "Community" : "Private Message"}</p>
                       </div>
                     </motion.div>
                   </AnimatePresence>
-                  <div className="hidden md:flex items-center gap-4 text-[#aebac1]">
+                  <div className="hidden md:flex items-center gap-4 text-gray-400">
                     <Video size={20} className="cursor-pointer hover:text-white transition-colors" onClick={() => handleCall('video')} />
                     <Phone size={20} className="cursor-pointer hover:text-white transition-colors" onClick={() => handleCall('audio')} />
                     <Search size={20} className="cursor-pointer hover:text-white transition-colors" onClick={() => toast.info("Search coming soon!")} />
@@ -1777,44 +1861,86 @@ const ChatPage = () => {
               <React.Fragment key={msg.id}>
                 {isNewDay && (
                   <div className="flex justify-center my-4">
-                    <span className="bg-[#182229] text-[#8696a0] px-3 py-1 rounded-lg text-[11px] uppercase font-medium shadow-sm">
+                    <span className="bg-[#1C1C1E] text-gray-500 px-3 py-1 rounded-lg text-[11px] uppercase font-medium shadow-sm">
                       {new Date(msg.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                     </span>
                   </div>
                 )}
                 <motion.div 
                   layout
-                  initial={{ opacity: 0, x: isMe ? 20 : -20, scale: 0.95 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className={cn("flex w-full group gap-2", isMe ? "justify-end" : "justify-start")}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                  id={`msg-${msg.id}`}
+                  className={cn("flex w-full group gap-2 items-end", isMe ? "justify-end" : "justify-start")}
                 >
                   {!isMe && activeChat === 'global' && (
-                    <div className="w-8 h-8 rounded-full overflow-hidden bg-white/10 flex-shrink-0 mt-auto mb-1 flex items-center justify-center">
-                      {msg.profilePicUrl ? (
-                        <img src={msg.profilePicUrl} alt={msg.user} className="w-full h-full object-cover" />
+                    <div className="w-8 h-8 rounded-full overflow-hidden bg-white/10 flex-shrink-0 mb-1 flex items-center justify-center">
+                      {(users.find(u => u.username === msg.user)?.profilePicUrl || msg.profilePicUrl) ? (
+                        <img src={users.find(u => u.username === msg.user)?.profilePicUrl || msg.profilePicUrl} alt={msg.user} className="w-full h-full object-cover" />
                       ) : (
                         <span className="text-xs font-bold text-white/50">{msg.user.charAt(0).toUpperCase()}</span>
                       )}
                     </div>
                   )}
+
+                  {/* Actions for isMe (appear on left) */}
+                  {isMe && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity self-center">
+                      <button 
+                        onClick={() => setReplyingToMessage(msg)}
+                        className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white p-1.5 rounded-full transition-colors"
+                        title="Reply"
+                      >
+                        <MessageSquare size={14} />
+                      </button>
+                      {msg.type === 'text' && (
+                        <button 
+                          onClick={() => {
+                            setEditingMessageId(msg.id);
+                            setInput(msg.text || "");
+                          }}
+                          className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white p-1.5 rounded-full transition-colors"
+                          title="Edit"
+                        >
+                          <FileText size={14} />
+                        </button>
+                      )}
+                      {(user?.role === 'admin' || user?.role === 'moderator' || user?.username === 'k1ros') && (
+                        <button 
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          className="bg-red-500/10 hover:bg-red-500/20 text-red-500 p-1.5 rounded-full transition-colors"
+                          title="Delete Message"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className={cn(
-                    "max-w-[85%] md:max-w-[65%] p-2 px-3 rounded-lg relative shadow-sm",
-                    isMe ? "bg-[#005c4b] rounded-tr-none" : "bg-[#202c33] rounded-tl-none"
+                    "max-w-[85%] md:max-w-[65%] p-3 px-4 rounded-2xl relative shadow-sm",
+                    isMe ? "bg-[#0A84FF] rounded-br-sm" : "bg-[#1C1C1E] rounded-bl-sm"
                   )}>
                     {!isMe && activeChat === 'global' && (
                       <p className="text-[11px] font-bold text-orange-400 mb-1">{msg.user}</p>
                     )}
                     
-                    {/* Admin Delete Button */}
-                    {(user?.role === 'admin' || user?.role === 'moderator' || user?.username === 'k1ros') && (
-                      <button 
-                        onClick={() => handleDeleteMessage(msg.id)}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-lg"
-                        title="Delete Message"
+                    {/* Replied Message Preview */}
+                    {msg.replyTo && (
+                      <div 
+                        className={cn(
+                          "border-l-4 p-2 mb-2 rounded text-xs cursor-pointer transition-colors",
+                          isMe ? "bg-black/20 border-white hover:bg-black/30" : "bg-black/20 border-[#0A84FF] hover:bg-black/30"
+                        )}
+                        onClick={() => {
+                          const el = document.getElementById(`msg-${msg.replyTo?.id}`);
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
                       >
-                        <Trash2 size={12} />
-                      </button>
+                        <p className={cn("font-bold mb-0.5", isMe ? "text-white" : "text-[#0A84FF]")}>{msg.replyTo.user}</p>
+                        <p className="text-white/80 truncate">{msg.replyTo.text}</p>
+                      </div>
                     )}
                     
                     {/* Message Content */}
@@ -1849,7 +1975,8 @@ const ChatPage = () => {
 
                     {/* Footer */}
                     <div className="flex items-center justify-end gap-1 mt-1">
-                      <span className="text-[10px] text-[#8696a0]">
+                      {msg.isEdited && <span className="text-[10px] text-white/40 italic mr-1">(edited)</span>}
+                      <span className="text-[10px] text-gray-500">
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                       {isMe && (
@@ -1858,7 +1985,7 @@ const ChatPage = () => {
                           animate={{ scale: 1, opacity: 1 }}
                           transition={{ delay: 0.1 }}
                         >
-                          <CheckCheck size={14} className="text-[#53bdeb]" />
+                          <CheckCheck size={14} className="text-white/80" />
                         </motion.div>
                       )}
                     </div>
@@ -1879,22 +2006,83 @@ const ChatPage = () => {
                         className="absolute -bottom-3 left-2 flex gap-0.5"
                       >
                         {Object.entries(msg.reactions).map(([emoji, users]) => (
-                          <span key={emoji} className="bg-[#202c33] border border-white/5 rounded-full px-1 text-[10px] shadow-sm">
+                          <span key={emoji} className="bg-[#1C1C1E] border border-white/5 rounded-full px-1 text-[10px] shadow-sm">
                             {emoji} {(users as string[]).length > 1 ? (users as string[]).length : ''}
                           </span>
                         ))}
                       </motion.div>
                     )}
                   </div>
+
+                  {/* Actions for !isMe (appear on right) */}
+                  {!isMe && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity self-center">
+                      <button 
+                        onClick={() => setReplyingToMessage(msg)}
+                        className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white p-1.5 rounded-full transition-colors"
+                        title="Reply"
+                      >
+                        <MessageSquare size={14} />
+                      </button>
+                      {(user?.role === 'admin' || user?.role === 'moderator' || user?.username === 'k1ros') && (
+                        <button 
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          className="bg-red-500/10 hover:bg-red-500/20 text-red-500 p-1.5 rounded-full transition-colors"
+                          title="Delete Message"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
               </React.Fragment>
             );
           })}
         </div>
 
+        {/* Reply/Edit Preview */}
+        {(replyingToMessage || editingMessageId) && (
+          <div className="bg-[#1C1C1E]/80 backdrop-blur-xl border-l-4 border-[#0A84FF] p-2 px-4 flex items-center justify-between mx-2 md:mx-4 mt-2 rounded-t-2xl z-10">
+            <div className="flex-1 min-w-0">
+              <p className="text-[#0A84FF] text-xs font-bold mb-1">
+                {editingMessageId ? "Edit Message" : `Reply to ${replyingToMessage?.user}`}
+              </p>
+              <p className="text-sm text-gray-400 truncate">
+                {editingMessageId ? "Editing..." : (replyingToMessage?.type === 'text' ? replyingToMessage.text : `[${replyingToMessage?.type}]`)}
+              </p>
+            </div>
+            <button 
+              onClick={() => {
+                setReplyingToMessage(null);
+                setEditingMessageId(null);
+                if (editingMessageId) setInput("");
+              }} 
+              className="text-gray-400 hover:text-white p-1"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        )}
+
         {/* Input Area */}
-        <div className="bg-[#202c33] p-2 md:p-3 px-2 md:px-4 flex items-center gap-2 md:gap-3 z-10">
-          <div className="hidden md:flex items-center gap-2 text-[#aebac1]">
+        <div className="bg-[#1C1C1E]/80 backdrop-blur-xl border-t border-white/5 p-2 md:p-3 px-2 md:px-4 flex flex-col gap-2 z-10">
+          {/* Upload Progress */}
+          {chatUploadProgress !== null && (
+            <div className="flex items-center gap-2 bg-white/5 p-2 rounded-lg">
+              <div className="w-8 h-8 flex items-center justify-center bg-blue-500/20 rounded-lg">
+                <File size={16} className="text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${chatUploadProgress}%` }} />
+                </div>
+              </div>
+              <span className="text-xs font-mono text-blue-400">{chatUploadProgress}%</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 md:gap-3">
             <button onClick={() => setIsPollModalOpen(true)} className="p-2 hover:bg-white/5 rounded-full transition-colors"><BarChart2 size={24} /></button>
             <label className="p-2 hover:bg-white/5 rounded-full transition-colors cursor-pointer">
               <Paperclip size={24} />
@@ -1908,22 +2096,22 @@ const ChatPage = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Type a message"
-              className="w-full bg-[#2a3942] border-none rounded-full md:rounded-lg py-2 md:py-2.5 px-4 outline-none text-[15px] text-[#e9edef] placeholder:text-[#8696a0]"
+              className="w-full bg-white/10 border-none rounded-full py-2 md:py-2.5 px-4 outline-none text-[15px] text-white placeholder:text-gray-500"
             />
           </form>
 
-          <div className="flex items-center gap-2 text-[#aebac1] min-w-[40px] md:min-w-[48px] justify-center">
+          <div className="flex items-center gap-2 text-gray-400 min-w-[40px] md:min-w-[48px] justify-center">
             <AnimatePresence mode="wait">
-              {input.trim() || window.innerWidth < 768 ? (
+              {input.trim() || isMobile ? (
                 <motion.button 
                   key="send"
                   initial={{ scale: 0, rotate: -45 }}
                   animate={{ scale: 1, rotate: 0 }}
                   exit={{ scale: 0, rotate: 45 }}
                   onClick={handleSendText} 
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors text-[#00a884]"
+                  className="p-1.5 bg-[#0A84FF] hover:bg-[#0070E0] rounded-full transition-colors text-white"
                 >
-                  <Send size={20} className="md:w-6 md:h-6" />
+                  <ArrowUp size={20} className="md:w-5 md:h-5" />
                 </motion.button>
               ) : (
                 <motion.div 
@@ -1951,21 +2139,21 @@ const ChatPage = () => {
       <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+          animate={{ opacity: 1, scale: 1 }}          transition={{ type: "spring", stiffness: 300, damping: 25 }}
           exit={{ opacity: 0, scale: 0.9 }}
-          className="w-full max-w-md bg-[#202c33] border border-white/10 p-8 rounded-3xl shadow-2xl"
+          className="w-full max-w-md bg-[#1C1C1E] border border-white/10 p-8 rounded-3xl shadow-2xl"
         >
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold">New Chat</h3>
-            <button onClick={() => setIsNewChatModalOpen(false)} className="text-[#8696a0] hover:text-white"><X size={24} /></button>
+            <button onClick={() => setIsNewChatModalOpen(false)} className="text-gray-500 hover:text-white"><X size={24} /></button>
           </div>
-          <p className="text-sm text-[#8696a0] mb-4">Enter the username of the person you want to chat with.</p>
+          <p className="text-sm text-gray-500 mb-4">Enter the username of the person you want to chat with.</p>
           <input 
             type="text"
             placeholder="Username"
             value={newChatUsername}
             onChange={(e) => setNewChatUsername(e.target.value)}
-            className="w-full bg-[#2a3942] border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-blue-500/50 text-white mb-4"
+            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-blue-500/50 text-white mb-4"
             onKeyDown={(e) => e.key === 'Enter' && startNewChat()}
             autoFocus
           />
@@ -1973,7 +2161,7 @@ const ChatPage = () => {
           {/* Suggested Users */}
           {users.length > 0 && (
             <div className="mb-6 max-h-48 overflow-y-auto custom-scrollbar space-y-2">
-              <p className="text-[10px] text-[#8696a0] uppercase tracking-widest font-bold mb-2">Suggested Users</p>
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-2">Suggested Users</p>
               {users.filter(u => u.username.toLowerCase().includes(newChatUsername.toLowerCase())).map(u => (
                 <button
                   key={u.username}
@@ -1984,8 +2172,12 @@ const ChatPage = () => {
                   }}
                   className="w-full flex items-center gap-3 p-2 hover:bg-white/5 rounded-xl transition-colors text-left"
                 >
-                  <div className="w-8 h-8 bg-purple-500/20 rounded-full flex items-center justify-center text-purple-400 text-xs font-bold uppercase">
-                    {u.username[0]}
+                  <div className="w-8 h-8 bg-purple-500/20 rounded-full overflow-hidden flex items-center justify-center text-purple-400 text-xs font-bold uppercase">
+                    {u.profilePicUrl ? (
+                      <img src={u.profilePicUrl} alt={u.username} className="w-full h-full object-cover" />
+                    ) : (
+                      u.username[0]
+                    )}
                   </div>
                   <span className="text-sm">{u.username}</span>
                 </button>
@@ -1996,7 +2188,7 @@ const ChatPage = () => {
           <button 
             onClick={startNewChat}
             disabled={!newChatUsername.trim()}
-            className="w-full bg-[#00a884] text-white py-3 rounded-xl font-bold hover:bg-[#008f6f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-[#0A84FF] text-white py-3 rounded-xl font-bold hover:bg-[#008f6f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Start Chat
           </button>
@@ -2109,7 +2301,7 @@ const FilesPage = () => {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-md bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 shadow-2xl"
+              className="w-full max-w-md bg-[#1C1C1E] border border-white/10 rounded-3xl p-8 shadow-2xl"
             >
               <div className="text-center">
                 <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -2145,7 +2337,7 @@ const FilesPage = () => {
 
 const SettingsPage = () => {
   const { language, setLanguage } = useSettings();
-  const { user, logout } = useAuth();
+  const { user, logout, login } = useAuth();
   const t = translations[language];
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2184,7 +2376,8 @@ const SettingsPage = () => {
           console.log("Download URL", downloadURL);
           const userRef = doc(db, "users", user.uid!);
           await updateDoc(userRef, { profilePicUrl: downloadURL });
-          toast.success("Profile picture updated! It may take a moment to reflect.");
+          login({ ...user, profilePicUrl: downloadURL });
+          toast.success("Profile picture updated!");
           setUploading(false);
         }
       );
@@ -2218,7 +2411,12 @@ const SettingsPage = () => {
         {/* Profile Section */}
         <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center">
           <div className="relative mb-4">
-            <div className="w-24 h-24 rounded-full overflow-hidden bg-white/10 border-2 border-white/20 flex items-center justify-center">
+            <div className="w-24 h-24 rounded-full overflow-hidden bg-white/10 border-2 border-white/20 flex items-center justify-center relative">
+              {uploading && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              )}
               {user?.profilePicUrl ? (
                 <img src={user.profilePicUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -2228,7 +2426,7 @@ const SettingsPage = () => {
             <button 
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="absolute bottom-0 right-0 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full transition-colors disabled:opacity-50"
+              className="absolute bottom-0 right-0 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full transition-colors disabled:opacity-50 z-20"
             >
               <Upload size={16} />
             </button>
@@ -2359,7 +2557,7 @@ const AdminPage = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'user' | 'message' | 'all_messages' | 'all_users', id: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'user' | 'message' | 'all_messages' | 'all_users', id: string, label?: string } | null>(null);
   const [settings, setSettings] = useState({ welcomeMessage: "Welcome to the chat!", maintenanceMode: false, chatEnabled: true });
   const { user: authUser } = useAuth();
   const isSuperAdmin = authUser?.role === "admin" || authUser?.username === "k1ros";
@@ -2419,9 +2617,14 @@ const AdminPage = () => {
   }, [isAdminLoggedIn]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log("Admin handleUpload called");
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log("No file selected");
+      return;
+    }
 
+    console.log("File selected:", file.name);
     setUploading(true);
     const storageRef = ref(storage, `admin_files/${Date.now()}_${file.name}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
@@ -2429,15 +2632,18 @@ const AdminPage = () => {
     uploadTask.on('state_changed', 
       (snapshot) => {
         const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+        console.log("Admin upload progress:", progress);
         setUploadProgress(progress);
       }, 
       (error) => {
         console.error("Admin upload failed", error);
+        toast.error("Upload failed: " + error.message);
         setError("Upload failed: " + error.message);
         setUploading(false);
         setUploadProgress(null);
       }, 
       async () => {
+        console.log("Admin upload completed");
         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
         const fileRef = doc(collection(db, "adminFiles"));
         await setDoc(fileRef, {
@@ -2461,6 +2667,24 @@ const AdminPage = () => {
     } catch (err) {
       console.error("Failed to update role", err);
       toast.error("Failed to update role");
+    }
+  };
+
+  const muteUser = async (username: string) => {
+    if (authUser?.role !== 'admin' && authUser?.username !== 'k1ros') {
+      toast.error("Only admins can mute users");
+      return;
+    }
+    try {
+      const q = query(collection(db, "users"), where("username", "==", username));
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        await updateDoc(doc(db, "users", snapshot.docs[0].id), { muted: true });
+        toast.success(`User ${username} muted`);
+      }
+    } catch (err) {
+      console.error("Mute failed", err);
+      toast.error("Failed to mute user");
     }
   };
 
@@ -2580,7 +2804,7 @@ const AdminPage = () => {
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
+          animate={{ opacity: 1, scale: 1 }}          transition={{ type: "spring", stiffness: 300, damping: 25 }}
           className="w-full h-screen md:h-auto max-w-md bg-background md:bg-white/5 border-none md:border-solid md:border-white/10 p-6 md:p-8 rounded-none md:rounded-3xl backdrop-blur-xl flex flex-col justify-center"
         >
           <div className="flex flex-col items-center mb-8">
@@ -2714,9 +2938,9 @@ const AdminPage = () => {
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
             <motion.div 
               initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
+              animate={{ opacity: 1, scale: 1 }}          transition={{ type: "spring", stiffness: 300, damping: 25 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="w-full max-w-sm bg-[#111] border border-white/10 p-8 rounded-3xl text-center"
+              className="w-full max-w-sm bg-[#1C1C1E] border border-white/10 p-8 rounded-3xl text-center"
             >
               <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-400 mx-auto mb-4">
                 <Trash2 size={32} />
@@ -2730,7 +2954,7 @@ const AdminPage = () => {
                 ) : (
                   <>
                     Are you sure you want to delete this {deleteConfirm.type}? 
-                    <span className="block text-white font-medium mt-1">{deleteConfirm.id}</span>
+                    <span className="block text-white font-medium mt-1">{deleteConfirm.label || deleteConfirm.id}</span>
                     This action cannot be undone.
                   </>
                 )}
@@ -2821,7 +3045,7 @@ const AdminPage = () => {
                   <div key={`admin-file-${file.name}-${idx}`} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
                     <span className="text-white font-medium truncate max-w-[200px] sm:max-w-md">{file.name}</span>
                     <button
-                      onClick={() => setDeleteConfirm({ type: 'file', id: file.name })}
+                      onClick={() => setDeleteConfirm({ type: 'file', id: file.id, label: file.name })}
                       className="p-2 text-white/40 hover:text-red-400 transition-colors"
                     >
                       <Trash2 size={18} />
@@ -2877,9 +3101,9 @@ const AdminPage = () => {
                             "border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
                           )}
                         >
-                          <option value="user" className="bg-[#111]">User</option>
-                          <option value="moderator" className="bg-[#111]">Moderator</option>
-                          <option value="admin" className="bg-[#111]">Admin</option>
+                          <option value="user" className="bg-[#1C1C1E]">User</option>
+                          <option value="moderator" className="bg-[#1C1C1E]">Moderator</option>
+                          <option value="admin" className="bg-[#1C1C1E]">Admin</option>
                         </select>
                       </td>
                       <td className="py-4">
@@ -2907,13 +3131,25 @@ const AdminPage = () => {
                               <ShieldAlert size={16} />
                             </button>
                             {isSuperAdmin && (
-                              <button
-                                onClick={() => setDeleteConfirm({ type: 'user', id: u.id })}
-                                className="p-2 text-white/20 hover:text-red-400 transition-colors"
-                                title="Delete User"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => muteUser(u.username)}
+                                  className={cn(
+                                    "p-2 transition-colors",
+                                    u.muted ? "text-yellow-400" : "text-white/20 hover:text-yellow-400"
+                                  )}
+                                  title={u.muted ? "Unmute User" : "Mute User"}
+                                >
+                                  <MicOff size={16} />
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirm({ type: 'user', id: u.id })}
+                                  className="p-2 text-white/20 hover:text-red-400 transition-colors"
+                                  title="Delete User"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
                             )}
                           </>
                         )}
