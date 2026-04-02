@@ -1,5 +1,15 @@
 {
   "entities": {
+    "ChatMetadata": {
+      "title": "ChatMetadata",
+      "description": "Metadata for a specific chat",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "password": { "type": "string", "description": "Hashed password for the chat" }
+      },
+      "required": ["chatId", "password"]
+    },
     "User": {
       "title": "User",
       "description": "User profile information",
@@ -9,17 +19,33 @@
           "type": "string",
           "description": "Unique username"
         },
-        "password": {
-          "type": "string",
-          "description": "Hashed password"
-        },
         "role": {
           "type": "string",
-          "enum": ["admin", "user"],
+          "enum": ["admin", "moderator", "user"],
           "description": "User role"
+        },
+        "banned": {
+          "type": "boolean",
+          "description": "Whether the user is banned"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
         }
       },
-      "required": ["username", "password"]
+      "required": ["username"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "Moderator application",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["username", "reason", "status", "createdAt"]
     },
     "Message": {
       "title": "Message",
@@ -39,9 +65,17 @@
           "description": "Message content"
         },
         "timestamp": {
+          "type": "number",
+          "description": "When the message was sent (milliseconds)"
+        },
+        "type": {
           "type": "string",
-          "format": "date-time",
-          "description": "When the message was sent"
+          "enum": ["text", "poll", "file"],
+          "description": "Type of message"
+        },
+        "isSystem": {
+          "type": "boolean",
+          "description": "Whether it's a system message"
         },
         "file": {
           "type": "object",
@@ -52,13 +86,26 @@
           },
           "description": "Optional attached file"
         },
+        "poll": {
+          "type": "object",
+          "properties": {
+            "question": { "type": "string" },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "text": { "type": "string" },
+                  "votes": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
         "reactions": {
           "type": "object",
-          "description": "Emoji reactions to the message",
-          "properties": {
-            "emoji": { "type": "string" },
-            "users": { "type": "array", "items": { "type": "string" } }
-          }
+          "description": "Emoji reactions to the message (keys are emojis, values are arrays of usernames)"
         }
       },
       "required": ["sender", "text", "timestamp"]
@@ -75,6 +122,17 @@
         "uploadedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "url", "uploadedAt"]
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "Global system settings",
+      "type": "object",
+      "properties": {
+        "welcomeMessage": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" },
+        "chatEnabled": { "type": "boolean" },
+        "registrationEnabled": { "type": "boolean" }
+      }
     }
   },
   "firestore": {
@@ -89,6 +147,18 @@
     "/adminFiles/{fileId}": {
       "schema": "AdminFile",
       "description": "Files uploaded by admin"
+    },
+    "/applications/{applicationId}": {
+      "schema": "Application",
+      "description": "Moderator applications"
+    },
+    "/chatMetadata/{chatId}": {
+      "schema": "ChatMetadata",
+      "description": "Metadata for chats, including passwords"
+    },
+    "/system/{documentId}": {
+      "schema": "SystemSettings",
+      "description": "Global system configuration"
     }
   }
 }

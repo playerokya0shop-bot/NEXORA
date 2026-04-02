@@ -1,58 +1,87 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: username
-    // Fields:
-    //   - username: string (required)
-    //   - password: string (required) - hashed
-    //   - role: string (required) - 'admin' or 'user'
-    //   - createdAt: string (required)
-    //
-    // Collection: messages
-    // Document ID: auto-generated
-    // Fields:
-    //   - sender: string (required)
-    //   - text: string (required)
-    //   - timestamp: string (required)
-    //   - file: map (optional)
-    //
-    // Collection: adminFiles
-    // Document ID: auto-generated
-    // Fields:
-    //   - name: string (required)
-    //   - url: string (required)
-    //   - uploadedAt: string (required)
-    //
-    // ===============================================================
-
-    // Helper Functions
     function isAuthenticated() {
       return request.auth != null;
     }
-
-    function isAdmin() {
-      // In this app, admin is identified by username 'k1ros'
-      // Since we use custom auth in Express, we can't easily check request.auth.uid for 'k1ros'
-      // unless we use Firebase Auth. 
-      // For now, these rules are a prototype.
-      return true; // Temporary for development, will harden later
+    
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    match /users/{username} {
-      allow read, write: if true; // Backend handles auth for now
+    function isAdmin() {
+      return isAuthenticated() && 
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          (getUserDoc().data.get('role', '') == 'admin' || getUserDoc().data.get('username', '') == 'k1ros')) ||
+         (request.auth.token.email == "playerok.ya0shop@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isMod() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        getUserDoc().data.get('role', '') == 'moderator';
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
     }
 
     match /messages/{messageId} {
-      allow read, write: if true; // Backend handles auth for now
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin() || isMod();
+    }
+
+    match /chatMetadata/{chatId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /applications/{applicationId} {
+      allow read: if isAdmin() || isMod();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    match /system/{documentId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /adminFiles/{fileId} {
-      allow read, write: if true; // Backend handles auth for now
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isMod();
+    }
+
+    match /calls/{callId} {
+      allow read, write: if isAuthenticated();
+    }
+    match /groups/{groupId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (resource.data.createdBy == getUserDoc().data.username || isAdmin());
+    }
+  }
+}
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /profiles/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /chat/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    match /chat_recordings/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    match /admin_files/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == 'k1ros');
     }
   }
 }
